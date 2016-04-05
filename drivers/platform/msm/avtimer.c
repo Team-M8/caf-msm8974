@@ -244,7 +244,13 @@ int avcs_core_disable_power_collapse(int enable)
 	mutex_lock(&avtimer.avtimer_lock);
 	if (enable) {
 		if (avtimer.avtimer_open_cnt) {
-			avtimer.avtimer_open_cnt++;
+			// Modified by Sumida Y. (2014/06/17)
+			//--- from here ---//
+			// Original Code
+			//avtimer.avtimer_open_cnt++;
+			// Modified Code
+			avtimer.avtimer_open_cnt = 1;
+			//--- up to here ---//
 			pr_debug("%s: opened avtimer open count=%d\n",
 				__func__, avtimer.avtimer_open_cnt);
 			rc = 0;
@@ -257,7 +263,13 @@ int avcs_core_disable_power_collapse(int enable)
 		}
 	} else {
 		if (avtimer.avtimer_open_cnt > 0) {
-			avtimer.avtimer_open_cnt--;
+			// Modified by Sumida Y. (2014/06/17)
+			//--- from here ---//
+			// Original Code
+			//avtimer.avtimer_open_cnt--;
+			// Modified Code
+			avtimer.avtimer_open_cnt = 0;
+			//--- up to here ---//
 			if (!avtimer.avtimer_open_cnt) {
 				rc = avcs_core_disable_avtimer(
 				avtimer.timer_handle);
@@ -307,8 +319,7 @@ int avcs_core_query_timer(uint64_t *avtimer_tick)
 			| avtimer_lsw;
 	res = do_div(avtimer_tick_temp, avtimer.clk_div);
 	*avtimer_tick = avtimer_tick_temp;
-	pr_debug_ratelimited("%s:Avtimer: msw: %u, lsw: %u, tick: %llu\n",
-			__func__,
+	pr_debug("%s:Avtimer: msw: %u, lsw: %u, tick: %llu\n", __func__,
 			avtimer_msw, avtimer_lsw, *avtimer_tick);
 	return 0;
 }
@@ -333,11 +344,21 @@ static long avtimer_ioctl(struct file *file, unsigned int ioctl_num,
 	switch (ioctl_num) {
 	case IOCTL_GET_AVTIMER_TICK:
 	{
+		uint32_t avtimer_msw_1st = 0, avtimer_lsw = 0;
+		uint32_t avtimer_msw_2nd = 0;
 		uint64_t avtimer_tick;
+		do {
+			avtimer_msw_1st = ioread32(avtimer.p_avtimer_msw);
+			avtimer_lsw = ioread32(avtimer.p_avtimer_lsw);
+			avtimer_msw_2nd = ioread32(avtimer.p_avtimer_msw);
+		} while (avtimer_msw_1st != avtimer_msw_2nd);
 
-		avcs_core_query_timer(&avtimer_tick);
-		pr_debug_ratelimited("%s: AV Timer tick: time %llx\n",
-		__func__, avtimer_tick);
+		avtimer_lsw = avtimer_lsw/avtimer.clk_div;
+		avtimer_tick =
+		((uint64_t) avtimer_msw_1st << 32) | avtimer_lsw;
+
+		pr_debug("%s: AV Timer tick: msw: %x, lsw: %x time %llx\n",
+		__func__, avtimer_msw_1st, avtimer_lsw, avtimer_tick);
 		if (copy_to_user((void *) ioctl_param, &avtimer_tick,
 				sizeof(avtimer_tick))) {
 					pr_err("copy_to_user failed\n");
